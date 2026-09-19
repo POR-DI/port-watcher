@@ -19,3 +19,23 @@ public final class ProcessInfoResolver: ProcessInfoResolving {
         return (name: name, path: path)
     }
 }
+
+public extension ProcessInfoResolving {
+    /// Resolves each unique PID once; never replaces an existing name with nil.
+    func enrich(_ entries: [PortEntry]) -> [PortEntry] {
+        var cache: [Int32: (name: String?, path: String?)] = [:]
+        return entries.map { entry in
+            let info: (name: String?, path: String?)
+            if let cached = cache[entry.pid] {
+                info = cached
+            } else {
+                info = resolve(pid: entry.pid)
+                cache[entry.pid] = info
+            }
+            var enriched = entry
+            if let name = info.name { enriched.processName = name }
+            enriched.processPath = info.path
+            return enriched
+        }
+    }
+}
