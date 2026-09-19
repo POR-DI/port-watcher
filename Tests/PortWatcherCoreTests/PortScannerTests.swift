@@ -36,4 +36,14 @@ struct PortScannerTests {
             try scanner.scan()
         }
     }
+
+    @Test func processCommandRunnerDoesNotDeadlockWhenChildFloodsStderr() throws {
+        // Writes 256KB to stderr (well past the ~64KB pipe buffer) before printing to stdout.
+        let runner = ProcessCommandRunner()
+        let output = try runner.run(
+            executablePath: "/bin/sh",
+            arguments: ["-c", "head -c 262144 /dev/zero 1>&2; echo ok"]
+        )
+        #expect(output == "ok\n")
+    }
 }

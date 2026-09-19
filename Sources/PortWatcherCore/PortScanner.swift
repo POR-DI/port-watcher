@@ -13,7 +13,7 @@ public struct ProcessCommandRunner: CommandRunning {
         process.arguments = arguments
         let stdout = Pipe()
         process.standardOutput = stdout
-        process.standardError = Pipe()
+        process.standardError = FileHandle.nullDevice
         try process.run()
         let data = stdout.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
