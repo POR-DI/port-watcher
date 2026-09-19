@@ -4,7 +4,8 @@ public protocol PortMonitorDelegate: AnyObject {
 
 /// Not thread-safe: call `update(with:)` from the main queue (or one serial queue).
 public final class PortMonitor {
-    private var previousEntries: [PortEntry] = []
+    public private(set) var entries: [PortEntry] = []
+    private var previousEntries: [PortEntry] { entries }
     public weak var delegate: PortMonitorDelegate?
 
     public init() {}
@@ -23,7 +24,7 @@ public final class PortMonitor {
             changes.append(.closed(entry))
         }
 
-        previousEntries = current
+        entries = current
         delegate?.portMonitor(self, didUpdate: current, changes: changes)
         return changes
     }

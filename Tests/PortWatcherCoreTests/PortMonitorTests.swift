@@ -81,4 +81,13 @@ struct PortMonitorTests {
         #expect(delegate.receivedEntries.count == 1)
         #expect(delegate.receivedChanges.count == 1)
     }
+
+    @Test func exposesDeduplicatedCurrentEntries() {
+        let monitor = PortMonitor()
+        let entry = makeEntry(port: "53002", pid: 654)
+        monitor.update(with: [entry, entry])
+        #expect(monitor.entries.count == 1)
+        monitor.update(with: [])
+        #expect(monitor.entries.isEmpty)
+    }
 }
