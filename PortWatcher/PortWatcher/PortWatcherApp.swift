@@ -3,10 +3,12 @@ import PortWatcherCore
 
 @main
 struct PortWatcherApp: App {
+    @State private var viewModel = PortListViewModel()
+
     var body: some Scene {
         MenuBarExtra("Port Watcher", systemImage: "network") {
-            Text("PortWatcherCore linked: \(LsofOutputParser.parse("").count) entries")
-                .padding()
+            PortListView(viewModel: viewModel)
+                .frame(width: 600, height: 440)
         }
         .menuBarExtraStyle(.window)
     }

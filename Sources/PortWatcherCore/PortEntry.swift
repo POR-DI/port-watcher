@@ -43,3 +43,7 @@ public struct PortEntry: Hashable {
         self.processPath = processPath
     }
 }
+
+extension PortEntry: Identifiable {
+    public var id: Key { key }
+}
