@@ -9,6 +9,8 @@ struct PortListView: View {
     @State private var pendingKill: PortEntry?
     @State private var killMessage: String?
     @State private var isKilling = false
+    @State private var showSettings = false
+    @AppStorage("refreshInterval") private var refreshInterval: Double = 3
 
     enum ProtocolChoice: String, CaseIterable, Identifiable {
         case all = "All", tcp = "TCP", udp = "UDP"
@@ -45,6 +47,9 @@ struct PortListView: View {
         }
         .onAppear { viewModel.start() }
         .onDisappear { viewModel.stop() }
+        .onAppear { viewModel.refreshInterval = refreshInterval }
+        .onChange(of: refreshInterval) { _, value in viewModel.refreshInterval = value }
+        .sheet(isPresented: $showSettings) { SettingsView() }
         .onChange(of: protocolChoice) { _, _ in applyCriteria() }
         .onChange(of: searchText) { _, _ in applyCriteria() }
         .confirmationDialog(
@@ -78,6 +83,11 @@ struct PortListView: View {
                 Image(systemName: "arrow.clockwise")
             }
             .disabled(viewModel.isScanning)
+            Button {
+                showSettings = true
+            } label: {
+                Image(systemName: "gearshape")
+            }
         }
         .padding(10)
     }
