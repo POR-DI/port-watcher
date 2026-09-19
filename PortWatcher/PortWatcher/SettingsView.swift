@@ -16,6 +16,7 @@ struct SettingsView: View {
             Toggle("Notify when ports open or close", isOn: $notificationsEnabled)
             Toggle("Launch at login", isOn: $launchAtLogin)
                 .onChange(of: launchAtLogin) { _, enabled in
+                    guard enabled != (SMAppService.mainApp.status == .enabled) else { return }
                     do {
                         if enabled { try SMAppService.mainApp.register() }
                         else { try SMAppService.mainApp.unregister() }

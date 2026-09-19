@@ -53,13 +53,16 @@ struct PortListView: View {
         .onChange(of: protocolChoice) { _, _ in applyCriteria() }
         .onChange(of: searchText) { _, _ in applyCriteria() }
         .confirmationDialog(
-            "Terminate \(pendingKill?.processName ?? "process") (PID \(pendingKill?.pid ?? 0))?",
+            "Terminate process?",
             isPresented: Binding(get: { pendingKill != nil }, set: { if !$0 { pendingKill = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Terminate (SIGTERM)", role: .destructive) { performKill(.terminate) }
-            Button("Force Kill (SIGKILL)", role: .destructive) { performKill(.forceKill) }
-            Button("Cancel", role: .cancel) { pendingKill = nil }
+            titleVisibility: .visible,
+            presenting: pendingKill
+        ) { entry in
+            Button("Terminate (SIGTERM)", role: .destructive) { performKill(entry, signal: .terminate) }
+            Button("Force Kill (SIGKILL)", role: .destructive) { performKill(entry, signal: .forceKill) }
+            Button("Cancel", role: .cancel) { }
+        } message: { entry in
+            Text("Terminate \(entry.processName ?? "process") (PID \(entry.pid))?")
         }
         .alert("Kill result", isPresented: Binding(get: { killMessage != nil }, set: { if !$0 { killMessage = nil } })) {
             Button("OK") { killMessage = nil }
@@ -134,8 +137,7 @@ struct PortListView: View {
         viewModel.criteria = PortFilterCriteria(protocolFilter: protocolChoice.filter, searchText: searchText)
     }
 
-    private func performKill(_ signal: KillSignal) {
-        guard let entry = pendingKill else { return }
+    private func performKill(_ entry: PortEntry, signal: KillSignal) {
         pendingKill = nil
         isKilling = true
         Task {

@@ -20,6 +20,7 @@ public final class PortListViewModel {
     private let monitor: PortMonitor
     private var loop: Task<Void, Never>?
     private var inFlight: Task<Void, Never>?
+    private var hasBaseline = false
 
     public var filtered: [PortEntry] { PortFilter.apply(criteria, to: entries) }
     public var isRunning: Bool { loop != nil }
@@ -57,7 +58,8 @@ public final class PortListViewModel {
             changes = monitor.update(with: snapshot)
             entries = monitor.entries
             lastError = nil
-            onChanges?(changes)
+            if hasBaseline { onChanges?(changes) }
+            hasBaseline = true
         } catch PortScanner.ScanError.commandNotFound(let path) {
             lastError = "lsof not found at \(path)"
         } catch {

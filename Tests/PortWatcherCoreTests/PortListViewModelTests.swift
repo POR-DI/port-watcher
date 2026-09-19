@@ -127,14 +127,32 @@ struct PortListViewModelTests {
         #expect(viewModel.isRunning == false)
     }
 
-    @Test func onChangesReceivesEventsAfterRefresh() async {
+    @Test func onChangesSkipsTheFirstSnapshot() async {
         let scanner = FakeScanner()
         scanner.result = .success([makeEntry(port: "3000", pid: 10, name: "node")])
         let viewModel = makeViewModel(scanner: scanner)
-        var received: [PortChangeEvent] = []
-        viewModel.onChanges = { received = $0 }
+        var received: [[PortChangeEvent]] = []
+        viewModel.onChanges = { received.append($0) }
+        await viewModel.refresh()
+        #expect(received.isEmpty)
+        #expect(viewModel.changes.count == 1)
+    }
+
+    @Test func onChangesReceivesEventsAfterBaselineExists() async {
+        let scanner = FakeScanner()
+        let first = makeEntry(port: "3000", pid: 10, name: "node")
+        scanner.result = .success([first])
+        let viewModel = makeViewModel(scanner: scanner)
+        var received: [[PortChangeEvent]] = []
+        viewModel.onChanges = { received.append($0) }
+        await viewModel.refresh()
+        scanner.result = .success([first, makeEntry(port: "3001", pid: 11, name: "vite")])
         await viewModel.refresh()
         #expect(received.count == 1)
+        #expect(received[0].count == 1)
+        scanner.result = .success([first])
+        await viewModel.refresh()
+        #expect(received.count == 2)
     }
 
     @Test func killDuringInFlightScanWaitsThenRescans() async {
