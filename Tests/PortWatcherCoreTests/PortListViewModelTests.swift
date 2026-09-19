@@ -1,5 +1,6 @@
 import Testing
 import Darwin
+import Foundation
 @testable import PortWatcherCore
 
 @MainActor
@@ -7,9 +8,12 @@ struct PortListViewModelTests {
     final class FakeScanner: PortScanning {
         var result: Result<[PortEntry], Error> = .success([])
         var scanCount = 0
+        var gate: DispatchSemaphore?
         func scan() throws -> [PortEntry] {
+            let snapshot = result
+            gate?.wait()
             scanCount += 1
-            return try result.get()
+            return try snapshot.get()
         }
     }
 

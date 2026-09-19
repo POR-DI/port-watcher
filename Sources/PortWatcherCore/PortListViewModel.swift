@@ -8,7 +8,7 @@ public final class PortListViewModel {
     public private(set) var entries: [PortEntry] = []
     public private(set) var changes: [PortChangeEvent] = []
     public var criteria = PortFilterCriteria()
-    public private(set) var isScanning = false
+    public var isScanning: Bool { inFlight != nil }
     public private(set) var lastError: String?
     public private(set) var lastKillResult: KillResult?
     public var refreshInterval: TimeInterval = 3.0
@@ -19,6 +19,7 @@ public final class PortListViewModel {
     private let killer: ProcessKiller
     private let monitor: PortMonitor
     private var loop: Task<Void, Never>?
+    private var inFlight: Task<Void, Never>?
 
     public var filtered: [PortEntry] { PortFilter.apply(criteria, to: entries) }
     public var isRunning: Bool { loop != nil }
@@ -36,9 +37,16 @@ public final class PortListViewModel {
     }
 
     public func refresh() async {
-        guard !isScanning else { return }
-        isScanning = true
-        defer { isScanning = false }
+        while let running = inFlight {
+            await running.value
+        }
+        let task = Task { await self.performScan() }
+        inFlight = task
+        await task.value
+        inFlight = nil
+    }
+
+    private func performScan() async {
         let scanner = self.scanner
         let resolver = self.resolver
         do {
