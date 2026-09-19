@@ -42,10 +42,11 @@ public final class ProcessKiller {
     public func kill(pid: Int32, signal: KillSignal) -> KillResult {
         let result = syscall.kill(pid: pid, signal: signal.rawSignal)
         guard result != 0 else { return .success }
-        switch syscall.lastErrno {
+        let errorNumber = syscall.lastErrno
+        switch errorNumber {
         case EPERM: return .permissionDenied
         case ESRCH: return .noSuchProcess
-        default: return .unknown(errno: syscall.lastErrno)
+        default: return .unknown(errno: errorNumber)
         }
     }
 }

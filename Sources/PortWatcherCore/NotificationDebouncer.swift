@@ -12,6 +12,7 @@ public struct DispatchQueueDebounceScheduler: DebounceScheduling {
     }
 }
 
+/// Not thread-safe: call `add(_:)` from the queue the scheduler dispatches to (main by default).
 public final class NotificationDebouncer {
     private let window: TimeInterval
     private let scheduler: DebounceScheduling

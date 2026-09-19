@@ -16,6 +16,7 @@ public final class UserNotificationPoster: NotificationPosting {
     }
 }
 
+/// Not thread-safe: call `handle(_:)` from the queue the scheduler dispatches to (main by default).
 public final class PortNotificationManager {
     private let debouncer: NotificationDebouncer
 

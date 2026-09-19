@@ -20,6 +20,7 @@ public struct PortEntry: Hashable {
     public let remotePort: String?
     public let state: String?
     public let pid: Int32
+    /// Mutable so the app layer can enrich entries via ProcessInfoResolver after scanning.
     public var processName: String?
     public var processPath: String?
 

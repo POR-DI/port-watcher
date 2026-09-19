@@ -2,6 +2,7 @@ public protocol PortMonitorDelegate: AnyObject {
     func portMonitor(_ monitor: PortMonitor, didUpdate entries: [PortEntry], changes: [PortChangeEvent])
 }
 
+/// Not thread-safe: call `update(with:)` from the main queue (or one serial queue).
 public final class PortMonitor {
     private var previousEntries: [PortEntry] = []
     public weak var delegate: PortMonitorDelegate?
