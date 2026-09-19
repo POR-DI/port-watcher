@@ -39,11 +39,12 @@ public final class PortListViewModel {
     public func refresh() async {
         while let running = inFlight {
             await running.value
+            if inFlight == running { inFlight = nil }
         }
         let task = Task { await self.performScan() }
         inFlight = task
         await task.value
-        inFlight = nil
+        if inFlight == task { inFlight = nil }
     }
 
     private func performScan() async {

@@ -136,4 +136,29 @@ struct PortListViewModelTests {
         await viewModel.refresh()
         #expect(received.count == 1)
     }
+
+    @Test func killDuringInFlightScanWaitsThenRescans() async {
+        let scanner = FakeScanner()
+        let killSyscall = FakeKillSyscall()
+        let entry = makeEntry(port: "3000", pid: 42, name: "node")
+        scanner.result = .success([entry])
+        scanner.gate = DispatchSemaphore(value: 0)
+        let viewModel = makeViewModel(scanner: scanner, killSyscall: killSyscall)
+
+        let periodic = Task { await viewModel.refresh() }
+        try? await Task.sleep(for: .milliseconds(100))
+        let killTask = Task { await viewModel.kill(entry) }
+        try? await Task.sleep(for: .milliseconds(100))
+
+        scanner.result = .success([])
+        scanner.gate?.signal()
+        scanner.gate = nil
+        await periodic.value
+        _ = await killTask.value
+
+        #expect(killSyscall.capturedPID == 42)
+        #expect(scanner.scanCount == 2)
+        #expect(viewModel.entries.isEmpty)
+        #expect(viewModel.isScanning == false)
+    }
 }
