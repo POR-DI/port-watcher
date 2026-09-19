@@ -1317,3 +1317,15 @@ git commit -m "feat: add debounced port change notifications"
 ## After this plan
 
 `PortWatcherCore` is a complete, tested library covering spec modules 1-6. The next plan builds the menu bar app (spec modules 7-9: `MenuBarController`, `PortListView`, `SettingsView`) as either a new executable target added to this package or a separate Xcode project depending on this package locally — that decision belongs to the next brainstorming/planning pass, not this one.
+
+## Carried to Plan 2 (spec items deliberately not implemented here)
+
+These are in the spec but were kept out of the zero-AppKit core on purpose. Plan 2 must own each of them:
+
+- **Refresh timer.** Spec §3 gives `PortMonitor` a Timer; here `PortMonitor` only exposes `update(with:)`. The app layer owns the timer, feeds it the settings "refresh interval", and calls `update` each tick.
+- **Threading contract.** `PortMonitor`, `NotificationDebouncer`, and `PortNotificationManager` are not thread-safe; call them from the main queue (or the queue the injected `DebounceScheduling` dispatches to). `PortScanner.scan()` is synchronous and blocks for the `lsof` run (~70 ms measured), so the app should scan on a background queue and hop to main before `PortMonitor.update`.
+- **Process-info enrichment loop.** Spec's `resolve(pids:)` is here a per-PID `resolve(pid:) -> (name:, path:)`. The app must (a) call it once per unique PID, not per entry, and (b) preserve the parser's `processName` when `resolve` returns `name: nil` (never overwrite with nil). A core `ProcessInfoResolver.enrich(_:)` helper encoding both rules is the recommended follow-up.
+- **Process icon.** Spec §2 puts icon lookup in `ProcessInfoResolver`; it is UI-only, so the app resolves it with `NSWorkspace.shared.icon(forFile: processPath)`.
+- **Notification authorization.** Nothing in the core calls `UNUserNotificationCenter.requestAuthorization`; the app must request it at launch (from an .app bundle — `UNUserNotificationCenter.current()` traps in a bundle-less process) and gate `PortNotificationManager` on the settings toggle. Note `UserNotificationPoster` discards the `add(request)` completion error, so an unauthorized post is a silent no-op.
+- **Kill error messages.** `KillResult` carries errno numbers, not user-facing text; the app renders `.permissionDenied` / `.noSuchProcess` / `.unknown(errno:)` (via `strerror`) in the alert and never retries.
+- **Dual-stack rows.** `-F pcnPT` does not request the `t` (IPv4/IPv6) field, so a dual-stack listener like `rapportd *:53002` collapses to one row after `PortMonitor` dedupe. Decide whether the table should match `lsof` row-for-row before designing it; if so, add `t` to the lsof arguments and to `PortEntry.Key`.
