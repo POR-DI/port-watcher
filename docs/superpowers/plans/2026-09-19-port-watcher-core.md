@@ -6,7 +6,7 @@
 
 **Architecture:** A standalone Swift Package (`Package.swift` at repo root) with one library target (`PortWatcherCore`) and one test target. Every module is either a pure function/struct or wraps exactly one OS boundary (a subprocess, a syscall, a notification center) behind a small protocol so the boundary can be faked in tests. `PortMonitor` is the only stateful type; everything else is stateless.
 
-**Tech Stack:** Swift 5.9 toolchain (confirmed installed: swift-driver 1.148.6 / Swift 6.3.3), Swift Package Manager, XCTest, Foundation, Darwin (for `proc_pidpath`/`kill`), UserNotifications. No third-party dependencies.
+**Tech Stack:** Swift 5.9 toolchain (confirmed installed: swift-driver 1.148.6 / Swift 6.3.3), Swift Package Manager, Swift Testing (`import Testing`), Foundation, Darwin (for `proc_pidpath`/`kill`), UserNotifications. No third-party dependencies.
 
 **Spec:** `docs/superpowers/specs/2026-09-19-port-watcher-design.md`
 
@@ -17,6 +17,8 @@
 - No third-party dependencies — Foundation/Darwin/UserNotifications only.
 - Each module (numbered 1-6 below, matching the spec's module numbers 1-6) is committed separately, per explicit user instruction (spec: Commit convention).
 - `PortMonitor` is the only stateful module in this plan's scope; everything else is stateless/pure (spec: Architecture).
+- Tests use **Swift Testing** (`import Testing`, `@Test`, `#expect`), not XCTest: this machine has only the Command Line Tools (no Xcode.app), where XCTest does not exist but `Testing.framework` does. Always run tests via `./scripts/test.sh` (created in Task 1), which passes the framework search paths `swift test` needs under the Command Line Tools; plain `swift test` fails with "no such module 'Testing'". `./scripts/test.sh --filter <SuiteName>` works.
+- Platform floor is `.macOS(.v14)` (the Command Line Tools' `Testing.framework` is built for macOS 14.0).
 
 ## Scope note (decomposition)
 
@@ -27,6 +29,8 @@ The spec defines 9 modules across 4 layers. This plan covers **modules 1-6 only*
 ```
 port-watcher/
   Package.swift
+  scripts/
+    test.sh                        # Task 1 — swift test + framework paths for CLT-only machines
   Sources/
     PortWatcherCore/
       PortEntry.swift              # Task 1
@@ -57,6 +61,7 @@ port-watcher/
 
 **Files:**
 - Create: `Package.swift`
+- Create: `scripts/test.sh`
 - Create: `Sources/PortWatcherCore/PortEntry.swift`
 - Create: `Sources/PortWatcherCore/LsofOutputParser.swift`
 - Test: `Tests/PortWatcherCoreTests/LsofOutputParserTests.swift`
@@ -68,7 +73,7 @@ port-watcher/
 - [ ] **Step 1: Create the package scaffold**
 
 ```bash
-mkdir -p Sources/PortWatcherCore Tests/PortWatcherCoreTests
+mkdir -p Sources/PortWatcherCore Tests/PortWatcherCoreTests scripts
 ```
 
 Write `Package.swift`:
@@ -79,7 +84,7 @@ import PackageDescription
 
 let package = Package(
     name: "PortWatcherCore",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v14)],
     products: [
         .library(name: "PortWatcherCore", targets: ["PortWatcherCore"])
     ],
@@ -90,16 +95,31 @@ let package = Package(
 )
 ```
 
+Write `scripts/test.sh` and make it executable (`chmod +x scripts/test.sh`):
+
+```sh
+#!/bin/sh
+# Only the Command Line Tools are installed (no Xcode.app), so swift test
+# cannot find Testing.framework or its interop dylib without these paths.
+CLT=/Library/Developer/CommandLineTools/Library/Developer
+exec swift test \
+  -Xswiftc -F"$CLT/Frameworks" \
+  -Xlinker -F"$CLT/Frameworks" \
+  -Xlinker -rpath -Xlinker "$CLT/Frameworks" \
+  -Xlinker -rpath -Xlinker "$CLT/usr/lib" \
+  "$@"
+```
+
 - [ ] **Step 2: Write the failing tests**
 
 Create `Tests/PortWatcherCoreTests/LsofOutputParserTests.swift`. These fixtures are real `lsof -i -P -n -F pcnPTL` output captured on the dev machine (process names/values are real; PID numbers in fixtures 4-6 are illustrative since the originals weren't captured as complete records):
 
 ```swift
-import XCTest
+import Testing
 @testable import PortWatcherCore
 
-final class LsofOutputParserTests: XCTestCase {
-    func test_parsesSingleListeningTCPPort() {
+struct LsofOutputParserTests {
+    @Test func parsesSingleListeningTCPPort() {
         let output = """
         p481
         cnode
@@ -112,19 +132,19 @@ final class LsofOutputParserTests: XCTestCase {
         TQS=0
         """
         let entries = LsofOutputParser.parse(output)
-        XCTAssertEqual(entries.count, 1)
+        #expect(entries.count == 1)
         let entry = entries[0]
-        XCTAssertEqual(entry.pid, 481)
-        XCTAssertEqual(entry.processName, "node")
-        XCTAssertEqual(entry.proto, .tcp)
-        XCTAssertEqual(entry.localAddress, "*")
-        XCTAssertEqual(entry.localPort, "5174")
-        XCTAssertNil(entry.remoteAddress)
-        XCTAssertNil(entry.remotePort)
-        XCTAssertEqual(entry.state, "LISTEN")
+        #expect(entry.pid == 481)
+        #expect(entry.processName == "node")
+        #expect(entry.proto == .tcp)
+        #expect(entry.localAddress == "*")
+        #expect(entry.localPort == "5174")
+        #expect(entry.remoteAddress == nil)
+        #expect(entry.remotePort == nil)
+        #expect(entry.state == "LISTEN")
     }
 
-    func test_parsesMultipleFileDescriptorsUnderSameProcess() {
+    @Test func parsesMultipleFileDescriptorsUnderSameProcess() {
         let output = """
         p654
         crapportd
@@ -143,11 +163,11 @@ final class LsofOutputParserTests: XCTestCase {
         TQS=0
         """
         let entries = LsofOutputParser.parse(output)
-        XCTAssertEqual(entries.count, 2)
-        XCTAssertTrue(entries.allSatisfy { $0.pid == 654 && $0.processName == "rapportd" })
+        #expect(entries.count == 2)
+        #expect(entries.allSatisfy { $0.pid == 654 && $0.processName == "rapportd" })
     }
 
-    func test_parsesMultipleProcesses() {
+    @Test func parsesMultipleProcesses() {
         let output = """
         p481
         cnode
@@ -169,11 +189,11 @@ final class LsofOutputParserTests: XCTestCase {
         TQS=0
         """
         let entries = LsofOutputParser.parse(output)
-        XCTAssertEqual(entries.count, 2)
-        XCTAssertEqual(Set(entries.map { $0.pid }), [481, 654])
+        #expect(entries.count == 2)
+        #expect(Set(entries.map { $0.pid }) == [481, 654])
     }
 
-    func test_parsesUDPWildcardWithNoState() {
+    @Test func parsesUDPWildcardWithNoState() {
         let output = """
         p700
         cidentityservicesd
@@ -183,14 +203,14 @@ final class LsofOutputParserTests: XCTestCase {
         n*:*
         """
         let entries = LsofOutputParser.parse(output)
-        XCTAssertEqual(entries.count, 1)
-        XCTAssertEqual(entries[0].proto, .udp)
-        XCTAssertEqual(entries[0].localAddress, "*")
-        XCTAssertEqual(entries[0].localPort, "*")
-        XCTAssertNil(entries[0].state)
+        #expect(entries.count == 1)
+        #expect(entries[0].proto == .udp)
+        #expect(entries[0].localAddress == "*")
+        #expect(entries[0].localPort == "*")
+        #expect(entries[0].state == nil)
     }
 
-    func test_parsesEstablishedConnectionWithRemoteAddress() {
+    @Test func parsesEstablishedConnectionWithRemoteAddress() {
         let output = """
         p900
         ccfprefsd
@@ -201,16 +221,16 @@ final class LsofOutputParserTests: XCTestCase {
         TST=ESTABLISHED
         """
         let entries = LsofOutputParser.parse(output)
-        XCTAssertEqual(entries.count, 1)
+        #expect(entries.count == 1)
         let entry = entries[0]
-        XCTAssertEqual(entry.localAddress, "127.0.0.1")
-        XCTAssertEqual(entry.localPort, "54329")
-        XCTAssertEqual(entry.remoteAddress, "127.0.0.1")
-        XCTAssertEqual(entry.remotePort, "53743")
-        XCTAssertEqual(entry.state, "ESTABLISHED")
+        #expect(entry.localAddress == "127.0.0.1")
+        #expect(entry.localPort == "54329")
+        #expect(entry.remoteAddress == "127.0.0.1")
+        #expect(entry.remotePort == "53743")
+        #expect(entry.state == "ESTABLISHED")
     }
 
-    func test_parsesIPv6AddressesInBrackets() {
+    @Test func parsesIPv6AddressesInBrackets() {
         let output = """
         p901
         csomeapp
@@ -221,15 +241,15 @@ final class LsofOutputParserTests: XCTestCase {
         TST=ESTABLISHED
         """
         let entries = LsofOutputParser.parse(output)
-        XCTAssertEqual(entries.count, 1)
+        #expect(entries.count == 1)
         let entry = entries[0]
-        XCTAssertEqual(entry.localAddress, "fe80:13::1c7a:5522:6ebf:4083")
-        XCTAssertEqual(entry.localPort, "1024")
-        XCTAssertEqual(entry.remoteAddress, "fe80:13::cc98:4e9b:4394:c4c0")
-        XCTAssertEqual(entry.remotePort, "1024")
+        #expect(entry.localAddress == "fe80:13::1c7a:5522:6ebf:4083")
+        #expect(entry.localPort == "1024")
+        #expect(entry.remoteAddress == "fe80:13::cc98:4e9b:4394:c4c0")
+        #expect(entry.remotePort == "1024")
     }
 
-    func test_ignoresUnknownFieldLinesWithoutCrashing() {
+    @Test func ignoresUnknownFieldLinesWithoutCrashing() {
         let output = """
         p481
         cnode
@@ -241,18 +261,18 @@ final class LsofOutputParserTests: XCTestCase {
         TST=LISTEN
         """
         let entries = LsofOutputParser.parse(output)
-        XCTAssertEqual(entries.count, 1)
+        #expect(entries.count == 1)
     }
 
-    func test_emptyOutputProducesNoEntries() {
-        XCTAssertEqual(LsofOutputParser.parse(""), [])
+    @Test func emptyOutputProducesNoEntries() {
+        #expect(LsofOutputParser.parse("") == [])
     }
 }
 ```
 
 - [ ] **Step 3: Run tests to verify they fail**
 
-Run: `swift test --filter LsofOutputParserTests`
+Run: `./scripts/test.sh --filter LsofOutputParserTests`
 Expected: Build failure — `PortEntry` and `LsofOutputParser` don't exist yet.
 
 - [ ] **Step 4: Write the implementation**
@@ -391,13 +411,13 @@ public enum LsofOutputParser {
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `swift test --filter LsofOutputParserTests`
+Run: `./scripts/test.sh --filter LsofOutputParserTests`
 Expected: All 8 tests PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add Package.swift Sources/PortWatcherCore/PortEntry.swift Sources/PortWatcherCore/LsofOutputParser.swift Tests/PortWatcherCoreTests/LsofOutputParserTests.swift
+git add Package.swift scripts/test.sh Sources/PortWatcherCore/PortEntry.swift Sources/PortWatcherCore/LsofOutputParser.swift Tests/PortWatcherCoreTests/LsofOutputParserTests.swift
 git commit -m "feat: add PortEntry model and lsof output parser"
 ```
 
@@ -418,10 +438,10 @@ git commit -m "feat: add PortEntry model and lsof output parser"
 Create `Tests/PortWatcherCoreTests/PortScannerTests.swift`:
 
 ```swift
-import XCTest
+import Testing
 @testable import PortWatcherCore
 
-final class PortScannerTests: XCTestCase {
+struct PortScannerTests {
     final class FakeCommandRunner: CommandRunning {
         var capturedPath: String?
         var capturedArguments: [String]?
@@ -433,27 +453,27 @@ final class PortScannerTests: XCTestCase {
         }
     }
 
-    func test_scanParsesRunnerOutputThroughLsofOutputParser() throws {
+    @Test func scanParsesRunnerOutputThroughLsofOutputParser() throws {
         let fake = FakeCommandRunner()
         fake.outputToReturn = "p481\ncnode\nLpordiewtrakul\nf16\nPTCP\nn*:5174\nTST=LISTEN\n"
         let scanner = PortScanner(lsofPath: "/usr/sbin/lsof", runner: fake)
         let entries = try scanner.scan()
-        XCTAssertEqual(entries.count, 1)
-        XCTAssertEqual(entries[0].pid, 481)
+        #expect(entries.count == 1)
+        #expect(entries[0].pid == 481)
     }
 
-    func test_scanPassesExpectedArgumentsToRunner() throws {
+    @Test func scanPassesExpectedArgumentsToRunner() throws {
         let fake = FakeCommandRunner()
         let scanner = PortScanner(lsofPath: "/usr/sbin/lsof", runner: fake)
         _ = try scanner.scan()
-        XCTAssertEqual(fake.capturedPath, "/usr/sbin/lsof")
-        XCTAssertEqual(fake.capturedArguments, ["-i", "-P", "-n", "-F", "pcnPT"])
+        #expect(fake.capturedPath == "/usr/sbin/lsof")
+        #expect(fake.capturedArguments == ["-i", "-P", "-n", "-F", "pcnPT"])
     }
 
-    func test_scanThrowsWhenLsofBinaryMissing() {
+    @Test func scanThrowsWhenLsofBinaryMissing() {
         let scanner = PortScanner(lsofPath: "/nonexistent/lsof", runner: FakeCommandRunner())
-        XCTAssertThrowsError(try scanner.scan()) { error in
-            XCTAssertEqual(error as? PortScanner.ScanError, .commandNotFound("/nonexistent/lsof"))
+        #expect(throws: PortScanner.ScanError.commandNotFound("/nonexistent/lsof")) {
+            try scanner.scan()
         }
     }
 }
@@ -461,7 +481,7 @@ final class PortScannerTests: XCTestCase {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `swift test --filter PortScannerTests`
+Run: `./scripts/test.sh --filter PortScannerTests`
 Expected: Build failure — `PortScanner`, `CommandRunning` don't exist yet.
 
 - [ ] **Step 3: Write the implementation**
@@ -521,7 +541,7 @@ public final class PortScanner: PortScanning {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `swift test --filter PortScannerTests`
+Run: `./scripts/test.sh --filter PortScannerTests`
 Expected: All 3 tests PASS.
 
 - [ ] **Step 5: Manual verification (real `lsof`, not automated)**
@@ -563,32 +583,32 @@ Confirmed on this machine: `import Darwin; proc_pidpath(pid, &buffer, UInt32(buf
 Create `Tests/PortWatcherCoreTests/ProcessInfoResolverTests.swift`:
 
 ```swift
-import XCTest
+import Testing
 import Foundation
 @testable import PortWatcherCore
 
-final class ProcessInfoResolverTests: XCTestCase {
-    func test_resolvesNameAndPathForCurrentProcess() {
+struct ProcessInfoResolverTests {
+    @Test func resolvesNameAndPathForCurrentProcess() {
         let resolver = ProcessInfoResolver()
         let currentPID = Int32(ProcessInfo.processInfo.processIdentifier)
         let result = resolver.resolve(pid: currentPID)
-        XCTAssertNotNil(result.path)
-        XCTAssertNotNil(result.name)
-        XCTAssertTrue(result.path?.contains("/") ?? false)
+        #expect(result.path != nil)
+        #expect(result.name != nil)
+        #expect(result.path?.contains("/") ?? false)
     }
 
-    func test_returnsNilForNonexistentPID() {
+    @Test func returnsNilForNonexistentPID() {
         let resolver = ProcessInfoResolver()
         let result = resolver.resolve(pid: 999_999)
-        XCTAssertNil(result.path)
-        XCTAssertNil(result.name)
+        #expect(result.path == nil)
+        #expect(result.name == nil)
     }
 }
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `swift test --filter ProcessInfoResolverTests`
+Run: `./scripts/test.sh --filter ProcessInfoResolverTests`
 Expected: Build failure — `ProcessInfoResolver` doesn't exist yet.
 
 - [ ] **Step 3: Write the implementation**
@@ -621,7 +641,7 @@ public final class ProcessInfoResolver: ProcessInfoResolving {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `swift test --filter ProcessInfoResolverTests`
+Run: `./scripts/test.sh --filter ProcessInfoResolverTests`
 Expected: Both tests PASS.
 
 - [ ] **Step 5: Commit**
@@ -651,66 +671,75 @@ Design note grounded in real captured data: a single process can report two file
 Create `Tests/PortWatcherCoreTests/PortMonitorTests.swift`:
 
 ```swift
-import XCTest
+import Testing
 @testable import PortWatcherCore
 
-final class PortMonitorTests: XCTestCase {
+struct PortMonitorTests {
     func makeEntry(port: String, pid: Int32) -> PortEntry {
         PortEntry(proto: .tcp, localAddress: "*", localPort: port, remoteAddress: nil,
                   remotePort: nil, state: "LISTEN", pid: pid, processName: "test", processPath: nil)
     }
 
-    func test_firstUpdateReportsAllEntriesAsOpened() {
+    @Test func firstUpdateReportsAllEntriesAsOpened() {
         let monitor = PortMonitor()
         let entry = makeEntry(port: "5174", pid: 481)
         let changes = monitor.update(with: [entry])
-        XCTAssertEqual(changes.count, 1)
-        guard case .opened(let opened) = changes[0] else { return XCTFail("expected .opened") }
-        XCTAssertEqual(opened.key, entry.key)
+        #expect(changes.count == 1)
+        guard case .opened(let opened) = changes[0] else {
+            Issue.record("expected .opened")
+            return
+        }
+        #expect(opened.key == entry.key)
     }
 
-    func test_unchangedEntryProducesNoEvents() {
+    @Test func unchangedEntryProducesNoEvents() {
         let monitor = PortMonitor()
         let entry = makeEntry(port: "5174", pid: 481)
         _ = monitor.update(with: [entry])
         let changes = monitor.update(with: [entry])
-        XCTAssertTrue(changes.isEmpty)
+        #expect(changes.isEmpty)
     }
 
-    func test_removedEntryProducesClosedEvent() {
+    @Test func removedEntryProducesClosedEvent() {
         let monitor = PortMonitor()
         let entry = makeEntry(port: "5174", pid: 481)
         _ = monitor.update(with: [entry])
         let changes = monitor.update(with: [])
-        XCTAssertEqual(changes.count, 1)
-        guard case .closed(let closed) = changes[0] else { return XCTFail("expected .closed") }
-        XCTAssertEqual(closed.key, entry.key)
+        #expect(changes.count == 1)
+        guard case .closed(let closed) = changes[0] else {
+            Issue.record("expected .closed")
+            return
+        }
+        #expect(closed.key == entry.key)
     }
 
-    func test_newPortOnSamePIDProducesOpenedEvent() {
+    @Test func newPortOnSamePIDProducesOpenedEvent() {
         let monitor = PortMonitor()
         let first = makeEntry(port: "5174", pid: 481)
         _ = monitor.update(with: [first])
         let second = makeEntry(port: "6000", pid: 481)
         let changes = monitor.update(with: [first, second])
-        XCTAssertEqual(changes.count, 1)
-        guard case .opened(let opened) = changes[0] else { return XCTFail("expected .opened") }
-        XCTAssertEqual(opened.key.localPort, "6000")
+        #expect(changes.count == 1)
+        guard case .opened(let opened) = changes[0] else {
+            Issue.record("expected .opened")
+            return
+        }
+        #expect(opened.key.localPort == "6000")
     }
 
-    func test_duplicateKeysInSameSnapshotAreDeduplicated() {
+    @Test func duplicateKeysInSameSnapshotAreDeduplicated() {
         let monitor = PortMonitor()
         let entry = makeEntry(port: "53002", pid: 654)
         let duplicate = makeEntry(port: "53002", pid: 654)
         let changes = monitor.update(with: [entry, duplicate])
-        XCTAssertEqual(changes.count, 1)
+        #expect(changes.count == 1)
     }
 }
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `swift test --filter PortMonitorTests`
+Run: `./scripts/test.sh --filter PortMonitorTests`
 Expected: Build failure — `PortMonitor`, `PortChangeEvent` don't exist yet.
 
 - [ ] **Step 3: Write the implementation**
@@ -758,7 +787,7 @@ public final class PortMonitor {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `swift test --filter PortMonitorTests`
+Run: `./scripts/test.sh --filter PortMonitorTests`
 Expected: All 5 tests PASS.
 
 - [ ] **Step 5: Commit**
@@ -784,11 +813,11 @@ git commit -m "feat: add PortMonitor with snapshot diffing"
 Create `Tests/PortWatcherCoreTests/ProcessKillerTests.swift`:
 
 ```swift
-import XCTest
+import Testing
 import Darwin
 @testable import PortWatcherCore
 
-final class ProcessKillerTests: XCTestCase {
+struct ProcessKillerTests {
     final class FakeKillSyscall: KillSyscalling {
         var resultToReturn: Int32 = 0
         var errnoToReturn: Int32 = 0
@@ -802,45 +831,45 @@ final class ProcessKillerTests: XCTestCase {
         }
     }
 
-    func test_returnsSuccessWhenSyscallReturnsZero() {
+    @Test func returnsSuccessWhenSyscallReturnsZero() {
         let fake = FakeKillSyscall()
         fake.resultToReturn = 0
         let killer = ProcessKiller(syscall: fake)
-        XCTAssertEqual(killer.kill(pid: 481, signal: .terminate), .success)
-        XCTAssertEqual(fake.capturedPID, 481)
-        XCTAssertEqual(fake.capturedSignal, SIGTERM)
+        #expect(killer.kill(pid: 481, signal: .terminate) == .success)
+        #expect(fake.capturedPID == 481)
+        #expect(fake.capturedSignal == SIGTERM)
     }
 
-    func test_returnsPermissionDeniedOnEPERM() {
+    @Test func returnsPermissionDeniedOnEPERM() {
         let fake = FakeKillSyscall()
         fake.resultToReturn = -1
         fake.errnoToReturn = EPERM
         let killer = ProcessKiller(syscall: fake)
-        XCTAssertEqual(killer.kill(pid: 1, signal: .forceKill), .permissionDenied)
-        XCTAssertEqual(fake.capturedSignal, SIGKILL)
+        #expect(killer.kill(pid: 1, signal: .forceKill) == .permissionDenied)
+        #expect(fake.capturedSignal == SIGKILL)
     }
 
-    func test_returnsNoSuchProcessOnESRCH() {
+    @Test func returnsNoSuchProcessOnESRCH() {
         let fake = FakeKillSyscall()
         fake.resultToReturn = -1
         fake.errnoToReturn = ESRCH
         let killer = ProcessKiller(syscall: fake)
-        XCTAssertEqual(killer.kill(pid: 999_999, signal: .terminate), .noSuchProcess)
+        #expect(killer.kill(pid: 999_999, signal: .terminate) == .noSuchProcess)
     }
 
-    func test_returnsUnknownForOtherErrno() {
+    @Test func returnsUnknownForOtherErrno() {
         let fake = FakeKillSyscall()
         fake.resultToReturn = -1
         fake.errnoToReturn = EINVAL
         let killer = ProcessKiller(syscall: fake)
-        XCTAssertEqual(killer.kill(pid: 1, signal: .terminate), .unknown(errno: EINVAL))
+        #expect(killer.kill(pid: 1, signal: .terminate) == .unknown(errno: EINVAL))
     }
 }
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `swift test --filter ProcessKillerTests`
+Run: `./scripts/test.sh --filter ProcessKillerTests`
 Expected: Build failure — `ProcessKiller`, `KillSyscalling`, `KillSignal`, `KillResult` don't exist yet.
 
 - [ ] **Step 3: Write the implementation**
@@ -903,7 +932,7 @@ public final class ProcessKiller {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `swift test --filter ProcessKillerTests`
+Run: `./scripts/test.sh --filter ProcessKillerTests`
 Expected: All 4 tests PASS.
 
 - [ ] **Step 5: Commit**
@@ -930,55 +959,55 @@ git commit -m "feat: add ProcessKiller wrapping kill() syscall"
 Create `Tests/PortWatcherCoreTests/PortFilterTests.swift`:
 
 ```swift
-import XCTest
+import Testing
 @testable import PortWatcherCore
 
-final class PortFilterTests: XCTestCase {
+struct PortFilterTests {
     func makeEntry(proto: PortEntry.NetProtocol, port: String, name: String, pid: Int32) -> PortEntry {
         PortEntry(proto: proto, localAddress: "*", localPort: port, remoteAddress: nil,
                   remotePort: nil, state: "LISTEN", pid: pid, processName: name, processPath: nil)
     }
 
-    func test_filtersByProtocol() {
+    @Test func filtersByProtocol() {
         let tcp = makeEntry(proto: .tcp, port: "80", name: "nginx", pid: 1)
         let udp = makeEntry(proto: .udp, port: "53", name: "dns", pid: 2)
         let criteria = PortFilterCriteria(protocolFilter: .udp)
-        XCTAssertEqual(PortFilter.apply(criteria, to: [tcp, udp]), [udp])
+        #expect(PortFilter.apply(criteria, to: [tcp, udp]) == [udp])
     }
 
-    func test_filtersByPortRange() {
+    @Test func filtersByPortRange() {
         let low = makeEntry(proto: .tcp, port: "80", name: "web", pid: 1)
         let high = makeEntry(proto: .tcp, port: "9000", name: "dev", pid: 2)
         let criteria = PortFilterCriteria(portRange: 1...1024)
-        XCTAssertEqual(PortFilter.apply(criteria, to: [low, high]), [low])
+        #expect(PortFilter.apply(criteria, to: [low, high]) == [low])
     }
 
-    func test_filtersBySearchTextMatchingProcessName() {
+    @Test func filtersBySearchTextMatchingProcessName() {
         let nginx = makeEntry(proto: .tcp, port: "80", name: "nginx", pid: 1)
         let node = makeEntry(proto: .tcp, port: "3000", name: "node", pid: 2)
         let criteria = PortFilterCriteria(searchText: "ngin")
-        XCTAssertEqual(PortFilter.apply(criteria, to: [nginx, node]), [nginx])
+        #expect(PortFilter.apply(criteria, to: [nginx, node]) == [nginx])
     }
 
-    func test_combinesMultipleCriteria() {
+    @Test func combinesMultipleCriteria() {
         let match = makeEntry(proto: .tcp, port: "3000", name: "node", pid: 1)
         let wrongProto = makeEntry(proto: .udp, port: "3000", name: "node", pid: 2)
         let wrongRange = makeEntry(proto: .tcp, port: "80", name: "node", pid: 3)
         let criteria = PortFilterCriteria(protocolFilter: .tcp, portRange: 1024...9000, searchText: "node")
-        XCTAssertEqual(PortFilter.apply(criteria, to: [match, wrongProto, wrongRange]), [match])
+        #expect(PortFilter.apply(criteria, to: [match, wrongProto, wrongRange]) == [match])
     }
 
-    func test_wildcardLocalPortIsExcludedFromRangeFilterSincePortIsNotNumeric() {
+    @Test func wildcardLocalPortIsExcludedFromRangeFilterSincePortIsNotNumeric() {
         let wildcard = makeEntry(proto: .udp, port: "*", name: "mdns", pid: 1)
         let criteria = PortFilterCriteria(portRange: 1...100)
-        XCTAssertEqual(PortFilter.apply(criteria, to: [wildcard]), [])
+        #expect(PortFilter.apply(criteria, to: [wildcard]) == [])
     }
 }
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `swift test --filter PortFilterTests`
+Run: `./scripts/test.sh --filter PortFilterTests`
 Expected: Build failure — `PortFilter`, `PortFilterCriteria` don't exist yet.
 
 - [ ] **Step 3: Write the implementation**
@@ -1023,7 +1052,7 @@ public enum PortFilter {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `swift test --filter PortFilterTests`
+Run: `./scripts/test.sh --filter PortFilterTests`
 Expected: All 5 tests PASS.
 
 - [ ] **Step 5: Commit**
@@ -1052,10 +1081,11 @@ git commit -m "feat: add PortFilter for protocol/range/search filtering"
 Create `Tests/PortWatcherCoreTests/NotificationDebouncerTests.swift`:
 
 ```swift
-import XCTest
+import Testing
+import Foundation
 @testable import PortWatcherCore
 
-final class NotificationDebouncerTests: XCTestCase {
+struct NotificationDebouncerTests {
     final class FakeScheduler: DebounceScheduling {
         var scheduledAction: (() -> Void)?
         var scheduleCallCount = 0
@@ -1070,7 +1100,7 @@ final class NotificationDebouncerTests: XCTestCase {
                            remotePort: nil, state: "LISTEN", pid: pid, processName: "test", processPath: nil))
     }
 
-    func test_flushesAllEventsInOneWindowAsSingleBatch() {
+    @Test func flushesAllEventsInOneWindowAsSingleBatch() {
         let scheduler = FakeScheduler()
         var flushedBatches: [[PortChangeEvent]] = []
         let debouncer = NotificationDebouncer(window: 1.0, scheduler: scheduler) { batch in
@@ -1078,13 +1108,13 @@ final class NotificationDebouncerTests: XCTestCase {
         }
         debouncer.add([makeEvent(port: "3000", pid: 1)])
         debouncer.add([makeEvent(port: "3001", pid: 2)])
-        XCTAssertEqual(scheduler.scheduleCallCount, 1, "should only schedule once per window")
+        #expect(scheduler.scheduleCallCount == 1, "should only schedule once per window")
         scheduler.scheduledAction?()
-        XCTAssertEqual(flushedBatches.count, 1)
-        XCTAssertEqual(flushedBatches[0].count, 2)
+        #expect(flushedBatches.count == 1)
+        #expect(flushedBatches[0].count == 2)
     }
 
-    func test_startsNewWindowAfterFlush() {
+    @Test func startsNewWindowAfterFlush() {
         let scheduler = FakeScheduler()
         var flushedBatches: [[PortChangeEvent]] = []
         let debouncer = NotificationDebouncer(window: 1.0, scheduler: scheduler) { batch in
@@ -1093,24 +1123,24 @@ final class NotificationDebouncerTests: XCTestCase {
         debouncer.add([makeEvent(port: "3000", pid: 1)])
         scheduler.scheduledAction?()
         debouncer.add([makeEvent(port: "4000", pid: 2)])
-        XCTAssertEqual(scheduler.scheduleCallCount, 2)
+        #expect(scheduler.scheduleCallCount == 2)
         scheduler.scheduledAction?()
-        XCTAssertEqual(flushedBatches.count, 2)
-        XCTAssertEqual(flushedBatches[1].count, 1)
+        #expect(flushedBatches.count == 2)
+        #expect(flushedBatches[1].count == 1)
     }
 
-    func test_addingEmptyEventsDoesNotSchedule() {
+    @Test func addingEmptyEventsDoesNotSchedule() {
         let scheduler = FakeScheduler()
         let debouncer = NotificationDebouncer(window: 1.0, scheduler: scheduler) { _ in }
         debouncer.add([])
-        XCTAssertEqual(scheduler.scheduleCallCount, 0)
+        #expect(scheduler.scheduleCallCount == 0)
     }
 }
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `swift test --filter NotificationDebouncerTests`
+Run: `./scripts/test.sh --filter NotificationDebouncerTests`
 Expected: Build failure — `NotificationDebouncer`, `DebounceScheduling` don't exist yet.
 
 - [ ] **Step 3: Write NotificationDebouncer implementation**
@@ -1164,7 +1194,7 @@ public final class NotificationDebouncer {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `swift test --filter NotificationDebouncerTests`
+Run: `./scripts/test.sh --filter NotificationDebouncerTests`
 Expected: All 3 tests PASS.
 
 - [ ] **Step 5: Write the failing test for PortNotificationManager**
@@ -1172,10 +1202,11 @@ Expected: All 3 tests PASS.
 Create `Tests/PortWatcherCoreTests/PortNotificationManagerTests.swift`:
 
 ```swift
-import XCTest
+import Testing
+import Foundation
 @testable import PortWatcherCore
 
-final class PortNotificationManagerTests: XCTestCase {
+struct PortNotificationManagerTests {
     final class FakePoster: NotificationPosting {
         var posted: [(title: String, body: String)] = []
         func post(title: String, body: String) {
@@ -1190,24 +1221,24 @@ final class PortNotificationManagerTests: XCTestCase {
         }
     }
 
-    func test_postsSingleNotificationAfterDebounceWindowFlush() {
+    @Test func postsSingleNotificationAfterDebounceWindowFlush() {
         let poster = FakePoster()
         let scheduler = FakeScheduler()
         let manager = PortNotificationManager(poster: poster, debounceWindow: 1.0, scheduler: scheduler)
         let entry = PortEntry(proto: .tcp, localAddress: "*", localPort: "3000", remoteAddress: nil,
                                remotePort: nil, state: "LISTEN", pid: 1, processName: "node", processPath: nil)
         manager.handle([.opened(entry)])
-        XCTAssertTrue(poster.posted.isEmpty, "should not post before the debounce window flushes")
+        #expect(poster.posted.isEmpty, "should not post before the debounce window flushes")
         scheduler.scheduledAction?()
-        XCTAssertEqual(poster.posted.count, 1)
-        XCTAssertTrue(poster.posted[0].body.contains("3000"))
+        #expect(poster.posted.count == 1)
+        #expect(poster.posted[0].body.contains("3000"))
     }
 }
 ```
 
 - [ ] **Step 6: Run tests to verify they fail**
 
-Run: `swift test --filter PortNotificationManagerTests`
+Run: `./scripts/test.sh --filter PortNotificationManagerTests`
 Expected: Build failure — `PortNotificationManager`, `NotificationPosting` don't exist yet.
 
 - [ ] **Step 7: Write PortNotificationManager implementation**
@@ -1266,12 +1297,12 @@ public final class PortNotificationManager {
 
 - [ ] **Step 8: Run tests to verify they pass**
 
-Run: `swift test --filter PortNotificationManagerTests`
+Run: `./scripts/test.sh --filter PortNotificationManagerTests`
 Expected: The 1 test PASSes.
 
 - [ ] **Step 9: Run the full test suite**
 
-Run: `swift test`
+Run: `./scripts/test.sh`
 Expected: All tests across all 7 tasks PASS (26 tests total).
 
 - [ ] **Step 10: Commit**
