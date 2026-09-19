@@ -3,25 +3,27 @@ public protocol PortMonitorDelegate: AnyObject {
 }
 
 public final class PortMonitor {
-    private var previousEntries: [PortEntry.Key: PortEntry] = [:]
+    private var previousEntries: [PortEntry] = []
     public weak var delegate: PortMonitorDelegate?
 
     public init() {}
 
     @discardableResult
     public func update(with newEntries: [PortEntry]) -> [PortChangeEvent] {
-        let newByKey = Dictionary(newEntries.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
-        var changes: [PortChangeEvent] = []
+        var currentKeys = Set<PortEntry.Key>()
+        let current = newEntries.filter { currentKeys.insert($0.key).inserted }
+        let previousKeys = Set(previousEntries.map(\.key))
 
-        for (key, entry) in newByKey where previousEntries[key] == nil {
+        var changes: [PortChangeEvent] = []
+        for entry in current where !previousKeys.contains(entry.key) {
             changes.append(.opened(entry))
         }
-        for (key, entry) in previousEntries where newByKey[key] == nil {
+        for entry in previousEntries where !currentKeys.contains(entry.key) {
             changes.append(.closed(entry))
         }
 
-        previousEntries = newByKey
-        delegate?.portMonitor(self, didUpdate: newEntries, changes: changes)
+        previousEntries = current
+        delegate?.portMonitor(self, didUpdate: current, changes: changes)
         return changes
     }
 }

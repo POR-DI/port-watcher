@@ -61,4 +61,24 @@ struct PortMonitorTests {
         let changes = monitor.update(with: [entry, duplicate])
         #expect(changes.count == 1)
     }
+
+    final class RecordingDelegate: PortMonitorDelegate {
+        var receivedEntries: [PortEntry] = []
+        var receivedChanges: [PortChangeEvent] = []
+        func portMonitor(_ monitor: PortMonitor, didUpdate entries: [PortEntry], changes: [PortChangeEvent]) {
+            receivedEntries = entries
+            receivedChanges = changes
+        }
+    }
+
+    @Test func delegateReceivesDeduplicatedEntriesAndChanges() {
+        let monitor = PortMonitor()
+        let delegate = RecordingDelegate()
+        monitor.delegate = delegate
+        let entry = makeEntry(port: "53002", pid: 654)
+        let duplicate = makeEntry(port: "53002", pid: 654)
+        monitor.update(with: [entry, duplicate])
+        #expect(delegate.receivedEntries.count == 1)
+        #expect(delegate.receivedChanges.count == 1)
+    }
 }
