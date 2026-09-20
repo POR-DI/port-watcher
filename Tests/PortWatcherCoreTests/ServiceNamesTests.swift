@@ -22,3 +22,15 @@ struct ServiceNamesTests {
         #expect(ServiceNames.name(for: entry) == nil)
     }
 }
+
+extension ServiceNamesTests {
+    @Test func unknownPortLookupsAreCheap() {
+        let clock = ContinuousClock()
+        let elapsed = clock.measure {
+            for port in 49152...50151 {
+                _ = ServiceNames.name(port: port, proto: .tcp)
+            }
+        }
+        #expect(elapsed < .milliseconds(50))
+    }
+}

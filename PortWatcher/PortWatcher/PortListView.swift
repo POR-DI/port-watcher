@@ -6,7 +6,6 @@ import PortWatcherCore
 struct PortListView: View {
     @Bindable var viewModel: PortListViewModel
     @State private var protocolChoice: ProtocolChoice = .all
-    @State private var scope: Scope = .listening
     @State private var icons: [String: NSImage] = [:]
     @State private var searchText = ""
     @State private var pendingKill: PortEntry?
@@ -25,11 +24,6 @@ struct PortListView: View {
             case .udp: return .udp
             }
         }
-    }
-
-    enum Scope: String, CaseIterable, Identifiable {
-        case listening = "Listening", all = "All"
-        var id: String { rawValue }
     }
 
     // System dialogs/sheets/alerts open a separate window, which a MenuBarExtra
@@ -51,7 +45,6 @@ struct PortListView: View {
         .onAppear { viewModel.refreshInterval = refreshInterval }
         .onChange(of: refreshInterval) { _, value in viewModel.refreshInterval = value }
         .onChange(of: protocolChoice) { _, _ in applyCriteria() }
-        .onChange(of: scope) { _, value in viewModel.showListeningOnly = (value == .listening) }
         .onChange(of: searchText) { _, _ in applyCriteria() }
     }
 
@@ -118,8 +111,9 @@ struct PortListView: View {
 
     private var filterBar: some View {
         HStack {
-            Picker("Scope", selection: $scope) {
-                ForEach(Scope.allCases) { Text($0.rawValue).tag($0) }
+            Picker("Scope", selection: $viewModel.showListeningOnly) {
+                Text("Listening").tag(true)
+                Text("All").tag(false)
             }
             .pickerStyle(.segmented)
             .labelsHidden()

@@ -13,14 +13,25 @@ public enum ServiceNames {
         11434: "ollama", 2375: "docker", 2376: "docker-tls", 27036: "steam", 27037: "steam",
     ]
 
-    /// Built-in developer table first, then /etc/services. Main-actor only:
-    /// getservbyport returns a static buffer.
+    /// Built-in developer table first, then /etc/services.
+    // Read /etc/services once (~7 ms): getservbyport misses cost ~5 ms each and
+    // are not cached by libc, which froze search over ephemeral ports.
+    private static let etcServices: [String: String] = {
+        var table: [String: String] = [:]
+        setservent(1)
+        while let entry = getservent() {
+            let port = Int(UInt16(bigEndian: UInt16(truncatingIfNeeded: entry.pointee.s_port)))
+            let proto = String(cString: entry.pointee.s_proto)
+            let key = "\(port)/\(proto)"
+            if table[key] == nil { table[key] = String(cString: entry.pointee.s_name) }
+        }
+        endservent()
+        return table
+    }()
+
     public static func name(port: Int, proto: PortEntry.NetProtocol) -> String? {
         if let known = wellKnown[port] { return known }
-        guard (1...65535).contains(port) else { return nil }
-        let networkOrder = Int32(UInt16(port).bigEndian)
-        guard let entry = getservbyport(networkOrder, proto == .tcp ? "tcp" : "udp") else { return nil }
-        return String(cString: entry.pointee.s_name)
+        return etcServices["\(port)/\(proto == .tcp ? "tcp" : "udp")"]
     }
 
     public static func name(for entry: PortEntry) -> String? {
