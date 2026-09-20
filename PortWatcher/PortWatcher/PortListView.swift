@@ -24,7 +24,29 @@ struct PortListView: View {
         }
     }
 
+    // System dialogs/sheets/alerts open a separate window, which a MenuBarExtra
+    // panel treats as a click outside itself and dismisses — so every
+    // confirmation is drawn as an overlay inside the panel's own window.
     var body: some View {
+        ZStack {
+            mainContent
+            if showSettings {
+                overlay { SettingsView(onDone: { showSettings = false }) }
+            } else if let entry = pendingKill {
+                overlay { killConfirmation(for: entry) }
+            } else if let message = killMessage {
+                overlay { killResult(message) }
+            }
+        }
+        .onAppear { viewModel.start() }
+        .onDisappear { viewModel.stop() }
+        .onAppear { viewModel.refreshInterval = refreshInterval }
+        .onChange(of: refreshInterval) { _, value in viewModel.refreshInterval = value }
+        .onChange(of: protocolChoice) { _, _ in applyCriteria() }
+        .onChange(of: searchText) { _, _ in applyCriteria() }
+    }
+
+    private var mainContent: some View {
         VStack(spacing: 0) {
             filterBar
             Divider()
@@ -45,30 +67,44 @@ struct PortListView: View {
             Divider()
             footer
         }
-        .onAppear { viewModel.start() }
-        .onDisappear { viewModel.stop() }
-        .onAppear { viewModel.refreshInterval = refreshInterval }
-        .onChange(of: refreshInterval) { _, value in viewModel.refreshInterval = value }
-        .sheet(isPresented: $showSettings) { SettingsView() }
-        .onChange(of: protocolChoice) { _, _ in applyCriteria() }
-        .onChange(of: searchText) { _, _ in applyCriteria() }
-        .confirmationDialog(
-            "Terminate process?",
-            isPresented: Binding(get: { pendingKill != nil }, set: { if !$0 { pendingKill = nil } }),
-            titleVisibility: .visible,
-            presenting: pendingKill
-        ) { entry in
+    }
+
+    private func overlay<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        ZStack {
+            Color.black.opacity(0.35)
+            content()
+                .padding(20)
+                .frame(maxWidth: 360)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .shadow(radius: 12)
+        }
+    }
+
+    private func killConfirmation(for entry: PortEntry) -> some View {
+        VStack(spacing: 12) {
+            Text("Terminate \(displayName(entry)) (PID \(String(entry.pid)))?")
+                .font(.headline)
+                .multilineTextAlignment(.center)
             Button("Terminate (SIGTERM)", role: .destructive) { performKill(entry, signal: .terminate) }
             Button("Force Kill (SIGKILL)", role: .destructive) { performKill(entry, signal: .forceKill) }
-            Button("Cancel", role: .cancel) { }
-        } message: { entry in
-            Text("Terminate \(entry.processName ?? "process") (PID \(entry.pid))?")
+            Button("Cancel", role: .cancel) { pendingKill = nil }
+                .keyboardShortcut(.cancelAction)
         }
-        .alert("Kill result", isPresented: Binding(get: { killMessage != nil }, set: { if !$0 { killMessage = nil } })) {
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+    }
+
+    private func killResult(_ message: String) -> some View {
+        VStack(spacing: 12) {
+            Text(message)
+                .multilineTextAlignment(.center)
             Button("OK") { killMessage = nil }
-        } message: {
-            Text(killMessage ?? "")
+                .keyboardShortcut(.defaultAction)
         }
+    }
+
+    private func displayName(_ entry: PortEntry) -> String {
+        entry.processName ?? "pid \(String(entry.pid))"
     }
 
     private var filterBar: some View {
@@ -104,7 +140,7 @@ struct PortListView: View {
                             .resizable()
                             .frame(width: 16, height: 16)
                     }
-                    Text(entry.processName ?? "pid \(entry.pid)")
+                    Text(displayName(entry))
                 }
             }
             TableColumn("PID") { entry in Text(String(entry.pid)) }.width(60)
@@ -148,12 +184,12 @@ struct PortListView: View {
     }
 
     private func message(for result: KillResult, entry: PortEntry) -> String? {
-        let name = entry.processName ?? "pid \(entry.pid)"
+        let name = displayName(entry)
         switch result {
         case .success:
             return nil
         case .permissionDenied:
-            return "No permission to terminate \(name) (PID \(entry.pid)). This is usually a system process."
+            return "No permission to terminate \(name) (PID \(String(entry.pid))). This is usually a system process."
         case .noSuchProcess:
             return "\(name) had already exited."
         case .unknown(let errno):
