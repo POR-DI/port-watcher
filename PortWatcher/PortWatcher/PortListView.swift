@@ -122,11 +122,13 @@ struct PortListView: View {
                 ForEach(Scope.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
             .frame(width: 150)
             Picker("Protocol", selection: $protocolChoice) {
                 ForEach(ProtocolChoice.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
             .frame(width: 150)
             TextField("Search process, port or PID", text: $searchText)
                 .textFieldStyle(.roundedBorder)
