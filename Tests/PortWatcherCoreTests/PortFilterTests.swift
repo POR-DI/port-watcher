@@ -41,4 +41,11 @@ struct PortFilterTests {
         let criteria = PortFilterCriteria(portRange: 1...100)
         #expect(PortFilter.apply(criteria, to: [wildcard]) == [])
     }
+
+    @Test func searchMatchesServiceName() {
+        let vite = makeEntry(proto: .tcp, port: "5174", name: "node", pid: 1)
+        let other = makeEntry(proto: .tcp, port: "9999", name: "node", pid: 2)
+        let criteria = PortFilterCriteria(searchText: "vite")
+        #expect(PortFilter.apply(criteria, to: [vite, other]) == [vite])
+    }
 }

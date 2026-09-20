@@ -22,7 +22,8 @@ public enum PortFilter {
                 }
             }
             if !criteria.searchText.isEmpty {
-                let haystack = "\(entry.processName ?? "") \(entry.localPort) \(entry.pid)".lowercased()
+                let service = ServiceNames.name(for: entry) ?? ""
+                let haystack = "\(entry.processName ?? "") \(entry.localPort) \(entry.pid) \(service)".lowercased()
                 if !haystack.contains(criteria.searchText.lowercased()) {
                     return false
                 }
