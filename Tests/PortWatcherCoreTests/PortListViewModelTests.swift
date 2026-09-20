@@ -179,4 +179,32 @@ struct PortListViewModelTests {
         #expect(viewModel.entries.isEmpty)
         #expect(viewModel.isScanning == false)
     }
+
+    @Test func listeningOnlyIsTheDefaultScope() async {
+        let scanner = FakeScanner()
+        let listening = makeEntry(port: "5174", pid: 1, name: "node")
+        let connected = PortEntry(proto: .tcp, localAddress: "127.0.0.1", localPort: "54321",
+                                   remoteAddress: "127.0.0.1", remotePort: "5174", state: "ESTABLISHED",
+                                   pid: 2, processName: "curl", processPath: nil)
+        scanner.result = .success([listening, connected])
+        let viewModel = makeViewModel(scanner: scanner)
+        await viewModel.refresh()
+        #expect(viewModel.showListeningOnly == true)
+        #expect(viewModel.filtered.map(\.localPort) == ["5174"])
+        viewModel.showListeningOnly = false
+        #expect(viewModel.filtered.count == 2)
+    }
+
+    @Test func groupsFollowFiltered() async {
+        let scanner = FakeScanner()
+        scanner.result = .success([makeEntry(port: "5174", pid: 1, name: "node"),
+                                   makeEntry(port: "5175", pid: 1, name: "node"),
+                                   makeEntry(proto: .udp, port: "5353", pid: 2, name: "mdns")])
+        let viewModel = makeViewModel(scanner: scanner)
+        await viewModel.refresh()
+        #expect(viewModel.groups.map(\.pid) == [2, 1])
+        viewModel.criteria = PortFilterCriteria(searchText: "node")
+        #expect(viewModel.groups.map(\.pid) == [1])
+        #expect(viewModel.groups[0].entries.count == 2)
+    }
 }

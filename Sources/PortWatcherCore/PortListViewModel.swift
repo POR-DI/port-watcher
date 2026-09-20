@@ -22,7 +22,14 @@ public final class PortListViewModel {
     private var inFlight: Task<Void, Never>?
     private var hasBaseline = false
 
-    public var filtered: [PortEntry] { PortFilter.apply(criteria, to: entries) }
+    public var showListeningOnly = true
+
+    public var filtered: [PortEntry] {
+        let scoped = showListeningOnly ? entries.filter(\.isListening) : entries
+        return PortFilter.apply(criteria, to: scoped)
+    }
+
+    public var groups: [ProcessGroup] { ProcessGroup.group(filtered) }
     public var isRunning: Bool { loop != nil }
 
     public init(scanner: PortScanning, resolver: ProcessInfoResolving,
