@@ -23,6 +23,8 @@ public struct PortEntry: Hashable {
     /// Mutable so the app layer can enrich entries via ProcessInfoResolver after scanning.
     public var processName: String?
     public var processPath: String?
+    public var workingDirectory: String?
+    public var command: String?
 
     public var key: Key {
         Key(proto: proto, localAddress: localAddress, localPort: localPort,
@@ -31,7 +33,8 @@ public struct PortEntry: Hashable {
 
     public init(proto: NetProtocol, localAddress: String, localPort: String,
                 remoteAddress: String?, remotePort: String?, state: String?,
-                pid: Int32, processName: String?, processPath: String?) {
+                pid: Int32, processName: String?, processPath: String?,
+                workingDirectory: String? = nil, command: String? = nil) {
         self.proto = proto
         self.localAddress = localAddress
         self.localPort = localPort
@@ -41,6 +44,8 @@ public struct PortEntry: Hashable {
         self.pid = pid
         self.processName = processName
         self.processPath = processPath
+        self.workingDirectory = workingDirectory
+        self.command = command
     }
 }
 

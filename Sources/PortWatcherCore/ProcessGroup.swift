@@ -12,6 +12,8 @@ public struct ProcessGroup: Identifiable, Equatable {
     public let pid: Int32
     public let name: String
     public let path: String?
+    public let workingDirectory: String?
+    public let command: String?
     public let entries: [PortEntry]
 
     public var id: Int32 { pid }
@@ -30,6 +32,8 @@ public struct ProcessGroup: Identifiable, Equatable {
             return ProcessGroup(pid: pid,
                                 name: items.first?.processName ?? "pid \(pid)",
                                 path: items.first?.processPath,
+                                workingDirectory: items.first?.workingDirectory,
+                                command: items.first?.command,
                                 entries: items)
         }
         return groups.sorted { a, b in

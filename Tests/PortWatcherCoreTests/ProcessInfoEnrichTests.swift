@@ -48,4 +48,31 @@ struct ProcessInfoEnrichTests {
         let enriched = resolver.enrich(entries)
         #expect(enriched.map(\.localPort) == ["3", "1", "2"])
     }
+
+    final class OriginResolver: ProcessInfoResolving {
+        var originCalls: [Int32] = []
+        func resolve(pid: Int32) -> (name: String?, path: String?) { (nil, nil) }
+        func origin(pid: Int32) -> ProcessOrigin {
+            originCalls.append(pid)
+            return ProcessOrigin(workingDirectory: "/Users/x/proj\(pid)", command: "node vite")
+        }
+    }
+
+    @Test func enrichCarriesWorkingDirectoryAndCommandOncePerPID() {
+        let resolver = OriginResolver()
+        let entries = [makeEntry(port: "1", pid: 1, name: "node"),
+                       makeEntry(port: "2", pid: 1, name: "node"),
+                       makeEntry(port: "3", pid: 2, name: "node")]
+        let enriched = resolver.enrich(entries)
+        #expect(enriched.map(\.workingDirectory) == ["/Users/x/proj1", "/Users/x/proj1", "/Users/x/proj2"])
+        #expect(enriched.map(\.command) == ["node vite", "node vite", "node vite"])
+        #expect(resolver.originCalls == [1, 2])
+    }
+
+    @Test func defaultOriginIsEmptyForResolversThatDoNotProvideIt() {
+        let resolver = FakeResolver()
+        let enriched = resolver.enrich([makeEntry(port: "1", pid: 1, name: "node")])
+        #expect(enriched[0].workingDirectory == nil)
+        #expect(enriched[0].command == nil)
+    }
 }

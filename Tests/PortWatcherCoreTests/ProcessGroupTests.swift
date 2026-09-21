@@ -40,6 +40,15 @@ struct ProcessGroupTests {
         #expect(ProcessGroup.group(entries).map(\.name) == ["Docker", "node", "zed"])
     }
 
+    @Test func carriesWorkingDirectoryAndCommand() {
+        var entry = makeEntry(port: "5175", state: "LISTEN", pid: 30898, name: "node")
+        entry.workingDirectory = "/Users/x/lab-day-05-start"
+        entry.command = "node vite"
+        let group = ProcessGroup.group([entry])[0]
+        #expect(group.workingDirectory == "/Users/x/lab-day-05-start")
+        #expect(group.command == "node vite")
+    }
+
     @Test func fallsBackToPIDName() {
         let groups = ProcessGroup.group([makeEntry(port: "1", state: "LISTEN", pid: 77, name: nil)])
         #expect(groups[0].name == "pid 77")

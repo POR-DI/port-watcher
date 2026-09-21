@@ -166,7 +166,10 @@ struct PortListView: View {
                 Text(summary(for: group))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
+            .help(group.command ?? group.path ?? "")
             Spacer()
             Text("PID \(String(group.pid))")
                 .font(.caption)
@@ -202,7 +205,15 @@ struct PortListView: View {
         var parts: [String] = []
         if group.listeningCount > 0 { parts.append("\(group.listeningCount) listening") }
         if group.connectionCount > 0 { parts.append("\(group.connectionCount) conn") }
+        if let directory = group.workingDirectory, directory != "/" {
+            parts.append(abbreviatingHome(directory))
+        }
         return parts.joined(separator: " · ")
+    }
+
+    private func abbreviatingHome(_ path: String) -> String {
+        let home = NSHomeDirectory()
+        return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
     }
 
     private func portLabel(_ entry: PortEntry) -> String {
