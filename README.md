@@ -1,85 +1,83 @@
 # Port Watcher
 
-แอปบนแถบเมนู macOS สำหรับดูว่า **โปรแกรมไหนเปิด port อะไรอยู่บนเครื่อง** และปิดโปรแกรมนั้นได้จากที่เดียว
+A macOS menu bar app that shows **which process is listening on which port**, grouped by process, with one-click kill.
 
-*A macOS menu bar app that shows which process is listening on which port, grouped by process, with one-click kill.*
+## Why
 
-## ทำไมถึงสร้าง
+- `port already in use` kept showing up while running dev servers, and hunting the culprit meant typing `lsof -i :3000` and reading a wall of text.
+- Six processes all named `node` look identical in `lsof`; there is no way to tell which project each one belongs to.
+- I wanted to understand ports, TCP vs UDP and processes on macOS properly, by building something real.
 
-- เจอ `port already in use` บ่อย ๆ ตอนรัน dev server แล้วต้องมานั่งพิมพ์ `lsof -i :3000` หาว่าใครจับ port อยู่
-- `lsof` ตอบเป็นข้อความยาว ๆ อ่านยาก แถม `node` 6 ตัวก็หน้าตาเหมือนกันหมด ไม่รู้ว่าตัวไหนคือโปรเจกต์ไหน
-- อยากเข้าใจเรื่อง port / TCP / UDP / process บน macOS ให้ลึกขึ้นผ่านการลงมือทำเอง
+This is a personal tool and a learning project. It is not intended for the App Store.
 
-โปรเจกต์นี้เป็นเครื่องมือส่วนตัวและโปรเจกต์เรียนรู้ ไม่ได้ตั้งใจส่งขึ้น App Store
+## What it does
 
-## ทำอะไรได้บ้าง
+- **One row per process** — real app icon, name, how many ports it is listening on and how many connections it has, and **the folder it was started from** (e.g. `~/Downloads/lab-day-05-start`). Hover the name to see the launch command (e.g. `node vite --port 5175`).
+- **Expand a row** to see each port with a known service name (`5432 (postgres)`, `5174 (vite)`) and its state (LISTEN / ESTABLISHED …). Hover a state for a plain-language explanation.
+- **Listening | All** — by default only ports waiting for connections are shown (usually what you want); switch to All to see outbound connections too.
+- **TCP / UDP filter** and **search** by process name, port, PID or service name.
+- **Kill** a process from its row, with a confirmation offering Terminate (graceful) or Force Kill.
+- **Settings** — refresh interval, launch at login.
+- Scans only while the panel is open; when closed the app is idle.
+- The app **never opens a socket or touches the network itself** — everything is read through `lsof`. Its only side effect is the kill you confirm.
 
-- **แถวละโปรแกรม** — ไอคอนจริงของแอป, ชื่อ, จำนวน port ที่รอรับ (listening) และ connection, **โฟลเดอร์ที่มันรันอยู่** (เช่น `~/Downloads/lab-day-05-start`) เอาเมาส์ชี้ที่ชื่อจะเห็นคำสั่งที่ใช้เปิด (เช่น `node vite --port 5175`)
-- **กดขยาย** เห็น port แต่ละอัน พร้อมชื่อ service ที่รู้จัก (`5432 (postgres)`, `5174 (vite)`) และสถานะ (LISTEN / ESTABLISHED …) ชี้ที่สถานะจะมีคำอธิบาย
-- **Listening | All** — ค่าเริ่มต้นโชว์เฉพาะ port ที่รอรับ connection (สิ่งที่มักอยากรู้) กด All เพื่อดู connection ขาออกทั้งหมด
-- **กรอง TCP / UDP** และ **ค้นหา** ตามชื่อโปรแกรม, port, PID หรือชื่อ service
-- **Kill** โปรแกรมจากหัวแถว มีกล่องยืนยันให้เลือก Terminate (ปิดดี ๆ) หรือ Force Kill
-- **Settings** — ความถี่ในการสแกน, เปิดตอน login
-- สแกนเฉพาะตอนเปิด panel เท่านั้น ปิด panel แล้วแอปแทบไม่ใช้ทรัพยากรเลย
-- แอป **ไม่เปิด socket หรือแตะเน็ตเวิร์กเองเลย** — อ่านข้อมูลผ่าน `lsof` อย่างเดียว ผลข้างเคียงเดียวคือการ kill ที่ผู้ใช้กดยืนยันเอง
+## How to use
 
-## วิธีใช้
+1. Launch the app. A network icon appears in the menu bar (no Dock icon).
+2. Click the icon to see the processes that have ports open.
+3. Click ▸ on a row to see its ports.
+4. Found the one you don't want? **Kill → Terminate (SIGTERM)**; use **Force Kill (SIGKILL)** only if it refuses to exit.
+5. The gear opens settings; Quit is in the bottom-right corner.
 
-1. เปิดแอป จะมีไอคอนรูปโครงข่ายบนแถบเมนูด้านขวาบน (ไม่มีใน Dock)
-2. กดไอคอน → เห็นรายการโปรแกรมที่เปิด port อยู่
-3. กด ▸ หน้าแถวเพื่อดู port ข้างใน
-4. เจอตัวที่ไม่ต้องการ → กด **Kill** → **Terminate (SIGTERM)** ถ้าไม่ตายค่อยใช้ **Force Kill (SIGKILL)**
-5. ปุ่มเฟืองสำหรับตั้งค่า, ปุ่ม Quit ที่มุมขวาล่างเพื่อออกจากแอป
+> Esc does not close the panel — click the menu bar icon again or click anywhere else.
 
-> Esc ไม่ปิด panel — ให้กดไอคอนบนแถบเมนูอีกครั้ง หรือกดที่อื่นบนจอ
+## Build
 
-## ติดตั้ง / build
-
-ต้องมี macOS 14 ขึ้นไป และ Xcode (ทดสอบกับ Xcode 27)
+Requires macOS 14 or later and Xcode (tested with Xcode 27).
 
 ```sh
 git clone https://github.com/POR-DI/port-watcher.git
 cd port-watcher
 
-# build แอป
+# build the app
 xcodebuild -project PortWatcher/PortWatcher.xcodeproj -scheme PortWatcher \
   -configuration Debug -derivedDataPath .build/xcode build
 
-# เปิดแอป
+# run it
 open .build/xcode/Build/Products/Debug/PortWatcher.app
 ```
 
-หรือเปิด `PortWatcher/PortWatcher.xcodeproj` ใน Xcode แล้วกด Run
+Or open `PortWatcher/PortWatcher.xcodeproj` in Xcode and press Run.
 
-รันเทสต์ของส่วน logic (70 ข้อ):
+Run the logic tests (70 tests):
 
 ```sh
 swift test
 ```
 
-## ข้อจำกัดที่ควรรู้
+## Known limitations
 
-- **การแจ้งเตือน** (notify เมื่อ port เปิด/ปิด) ยังใช้ไม่ได้กับ build ที่ sign แบบ ad-hoc — macOS ไม่อนุญาต ต้องเพิ่ม Apple ID ใน Xcode → Settings → Accounts แล้วเลือก Team ให้โปรเจกต์ก่อน
-- เห็นเฉพาะ process ของ user ที่ล็อกอินอยู่ (`lsof` โดยไม่ใช่ root มองไม่เห็นของ root / user อื่น)
-- ปิด "port เดียว" โดยไม่ปิดโปรแกรมไม่ได้ — การ kill คือปิดทั้งโปรแกรม
-- ชื่อ service มาจากตารางในตัว + `/etc/services` ของ macOS บาง port อาจได้ชื่อที่ไม่ตรงกับการใช้งานจริง (เช่น 3101 ขึ้น `hp-pxpib`)
+- **Notifications** (alert when a port opens/closes) do not work with an ad-hoc-signed build — macOS refuses them. Add your Apple ID in Xcode → Settings → Accounts and pick a Team for the project first.
+- Only processes owned by the logged-in user are visible (`lsof` without root cannot see root's or other users' processes).
+- A single port cannot be closed on its own — killing means killing the whole process.
+- Service names come from a built-in table plus macOS's `/etc/services`; some ports get a name that does not match their actual use (e.g. 3101 shows as `hp-pxpib`).
 
-## โครงสร้างโปรเจกต์
+## Project layout
 
 ```
-Sources/PortWatcherCore/   logic ทั้งหมด (Swift Package) — สแกน lsof, จับกลุ่ม, filter, kill, view model
-Tests/PortWatcherCoreTests/ เทสต์ (Swift Testing)
-PortWatcher/               แอป SwiftUI (MenuBarExtra) — มีแต่หน้าจอ ไม่มี logic
-docs/superpowers/          spec และแผนงานของแต่ละรอบพัฒนา
-scripts/test.sh            รันเทสต์บนเครื่องที่มีแค่ Command Line Tools (ไม่มี Xcode)
+Sources/PortWatcherCore/    all logic (Swift Package): lsof scanning, grouping, filtering, kill, view model
+Tests/PortWatcherCoreTests/ tests (Swift Testing)
+PortWatcher/                the SwiftUI app (MenuBarExtra) — views only, no logic
+docs/superpowers/           design specs and implementation plans for each iteration
+scripts/test.sh             runs the tests on a machine with only Command Line Tools (no Xcode)
 ```
 
-หลักการ: อะไรที่ทดสอบอัตโนมัติได้อยู่ใน package ทั้งหมด แอปมีหน้าที่แค่แสดงผลและรับคลิก
+Principle: everything that can be tested automatically lives in the package; the app only renders and handles clicks.
 
-## สิ่งที่เรียนรู้ระหว่างทำ
+## Things learned along the way
 
-- `lsof -F` ให้ output แบบ machine-readable ที่ parse ง่ายกว่าตารางปกติมาก
-- process หนึ่งอาจเปิด port เดียวกันซ้ำ 2 บรรทัด (IPv4 + IPv6) ต้อง dedupe
-- `MenuBarExtra` แบบ window จะปิดตัวเองทันทีที่คลิกหน้าต่างอื่น — กล่องยืนยัน/alert ของระบบใช้ไม่ได้ ต้องวาดเองในตัว panel
-- `getservbyport` ที่หาไม่เจอใช้เวลา ~5 ms ต่อครั้งและไม่ cache — อ่าน `/etc/services` ทีเดียวตอนเริ่มดีกว่า
-- `Task` ที่จบแล้ว `await` ไม่ suspend — loop ที่รอมันจะหมุนค้าง main actor ได้
+- `lsof -F` produces machine-readable output that is far easier to parse than the default table.
+- One process can list the same port twice (IPv4 + IPv6); entries must be deduplicated.
+- A window-style `MenuBarExtra` dismisses itself the moment another window is clicked, so system confirmation dialogs and alerts cannot be used — they have to be drawn inside the panel.
+- A `getservbyport` miss costs ~5 ms and is not cached; reading `/etc/services` once at startup is much cheaper.
+- `await` on an already-finished `Task` does not suspend — a loop waiting on it can spin and starve the main actor.
